@@ -114,14 +114,17 @@ export const pitchDeckPrompt = (idea) =>
   - Key Visual Recommendation
   - Bulleted Content points to write on the slide`;
 
-// Combined builders to reduce parallel API calls (safeguards free key rate limits)
 export const buildCombinedAnalysisPrompt = (idea, selectedSections) => {
-  let prompt = `You are tasked with analyzing this startup idea: "${idea}".\n\n`;
-  prompt += `Generate a detailed report covering the selected areas below. For EACH selected area, you MUST begin the content with the exact delimiter on a new line: ===[SECTION_ID]=== (e.g. ===IDEA=== or ===CUSTOMER===). Do not add markdown styling inside the delimiters. Keep the content detailed, direct, and highly specific to the idea.\n\n`;
+  let prompt = `You are an expert startup co-founder and analyst. Analyze this startup idea: "${idea}".\n\n`;
+  prompt += `You must write a detailed, highly practical analysis for each of the selected sections listed below.\n\n`;
+  prompt += `CRITICAL: You MUST separate each section with its exact marker on a new line: ===[SECTION_ID]=== (for example, ===IDEA=== or ===CUSTOMER===). Do not include any text, headers, asterisks, or markdown styling on the line containing the marker.\n\n`;
+  prompt += `Expected Output Format Example:\n`;
+  prompt += `===IDEA===\n[Detailed analysis content for Idea Intelligence here]\n\n`;
+  prompt += `===CUSTOMER===\n[Detailed analysis content for Customer Intelligence here]\n\n`;
+  prompt += `Here are the instructions for each section you must generate:\n\n`;
   
   selectedSections.forEach(secId => {
-    prompt += `===${secId.toUpperCase()}===\n`;
-    prompt += `Generate details for: ${secId.toUpperCase()} MODULE\n`;
+    prompt += `Section: ${secId.toUpperCase()}\n`;
     if (secId === 'idea') {
       prompt += `Instructions: Analyze this startup idea. Detail Idea Score /100, Innovation Level, Market Category, Difficulty, Is This Already Built (stand-out angle), Trend Matcher, 3 Idea Improvers, Problem-Solution Fit 1-10, and India Market Readiness Score.\n\n`;
     } else if (secId === 'customer') {

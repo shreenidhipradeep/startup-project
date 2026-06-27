@@ -175,7 +175,7 @@ function App() {
     // --- 2. CONSOLIDATED REAL AI RUNTIME (Resolves Rate Limits & Quotas) ---
     // We consolidate what used to be 13 separate calls into 3 requests to avoid exceeding rate limits (5 RPM on Gemini free)
     const promises = [
-      fetchSection('analysis', buildCombinedAnalysisPrompt(ideaText, selectedSections), systemPrompt, 3000),
+      fetchSection('analysis', buildCombinedAnalysisPrompt(ideaText, selectedSections), systemPrompt, 7000),
       fetchSection('brandkit', buildCombinedBrandKitPrompt(ideaText), systemPrompt, 1800),
       fetchSection('jsondata', buildCombinedJsonPrompt(ideaText), 'Return only valid JSON.', 1000)
     ]
@@ -190,17 +190,20 @@ function App() {
       // A. Parse Analysis Sections
       const textReports = {}
       selectedSections.forEach((secId) => {
-        // Match contents between section markers, e.g. ===IDEA=== and the next ===SECTION=== or string end
-        const regex = new RegExp(`===${secId.toUpperCase()}===([\\s\\S]*?)(?=(===\\w+===|$))`, 'i')
+        // Loose match regex to support different output headings (e.g. ===IDEA===, ### IDEA, **IDEA**)
+        const regex = new RegExp(`(?:===|###|#|\\*\\*|\\b)${secId.toUpperCase()}(?:===|\\b|\\*\\*)\\s*([\\s\\S]*?)(?=(===|###|#|\\*\\*|\\b)(?:IDEA|CUSTOMER|MARKET|BUSINESS|BUILD|RISK|VALIDATION|TRACTION)(?:===|\\b|\\*\\*)|$)`, 'i');
         const match = analysisOutput.match(regex)
-        if (match) {
+        
+        if (match && match[1].trim().length > 10) {
           textReports[secId] = match[1].trim()
         } else {
-          // If parsing failed or block was omitted, write error or direct content
-          if (analysisOutput.includes("Connection Error")) {
-            textReports[secId] = analysisOutput // Pass through connection errors
+          // Fallback: If only 1 section was selected, output the whole result
+          if (selectedSections.length === 1 && !analysisOutput.includes("Connection Error")) {
+            textReports[secId] = analysisOutput.trim()
           } else {
-            textReports[secId] = `Analysis generated successfully. Details:\n\n${analysisOutput.substring(0, 500)}...`
+            textReports[secId] = analysisOutput.includes("Connection Error")
+              ? analysisOutput
+              : `Module analysis processed. Complete generated contents available below:\n\n${analysisOutput}`
           }
         }
       })
@@ -345,6 +348,151 @@ function App() {
     document.body.removeChild(link);
   }
 
+  const handlePrintPdf = () => {
+    const printWindow = window.open('', '_blank')
+    if (!printWindow) {
+      alert("Please allow popups to download the PDF report.")
+      return
+    }
+
+    const formatMarkdownToHtml = (text) => {
+      if (!text) return ''
+      return text
+        .replace(/### (.*?)\n/g, '<h3 style="color:#0f172a; margin-top:15px; margin-bottom:5px; font-size:14px;">$1</h3>')
+        .replace(/## (.*?)\n/g, '<h2 style="color:#4f46e5; border-bottom: 1px solid #f1f5f9; padding-bottom: 4px; font-size:18px; margin-top:20px;">$1</h2>')
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\n/g, '<br>')
+    }
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>StartupGPT - Venture Blueprint: ${idea}</title>
+          <style>
+            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+            body {
+              font-family: 'Inter', sans-serif;
+              color: #334155;
+              padding: 40px;
+              line-height: 1.6;
+              max-width: 800px;
+              margin: 0 auto;
+            }
+            .header {
+              text-align: center;
+              border-bottom: 3px double #e2e8f0;
+              padding-bottom: 20px;
+              margin-bottom: 30px;
+            }
+            .title { color: #4f46e5; font-size: 28px; font-weight: 700; margin: 0; }
+            .subtitle { color: #64748b; font-size: 13px; font-weight: 500; text-transform: uppercase; letter-spacing: 1px; margin-top: 5px; }
+            .concept { background: #f8fafc; border-left: 4px solid #4f46e5; padding: 15px; border-radius: 4px; margin-bottom: 30px; font-style: italic; }
+            .metrics { display: flex; gap: 20px; margin-bottom: 35px; }
+            .metric-card { border: 1px solid #e2e8f0; padding: 15px; border-radius: 8px; flex: 1; text-align: center; background: #fff; }
+            .metric-title { font-size: 11px; font-weight: 600; text-transform: uppercase; color: #64748b; letter-spacing: 0.5px; }
+            .metric-value { font-size: 26px; font-weight: 700; color: #4f46e5; margin-top: 5px; }
+            .section-title { color: #1e1b4b; border-bottom: 2px solid #e2e8f0; padding-bottom: 6px; font-size: 18px; margin-top: 35px; text-transform: uppercase; letter-spacing: 0.5px; }
+            .box-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 30px; }
+            .box { border: 1px solid #e2e8f0; padding: 12px; border-radius: 6px; background: #fafafa; }
+            .box h4 { margin: 0 0 6px 0; color: #4f46e5; font-size: 12px; text-transform: uppercase; }
+            .box p { margin: 0; font-size: 12px; color: #475569; }
+            .report-block { font-size: 13px; color: #334155; }
+            pre { background: #f8fafc; padding: 15px; border-radius: 6px; border: 1px solid #e2e8f0; font-family: monospace; white-space: pre-wrap; font-size: 12px; }
+            @media print {
+              body { padding: 20px; }
+              .page-break { page-break-before: always; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1 class="title">StartupGPT Venture Blueprint</h1>
+            <div class="subtitle">AI Co-Founder Actionable Analysis</div>
+          </div>
+          
+          <div class="concept">
+            <strong>Venture Concept:</strong> "${idea}"
+          </div>
+          
+          <div class="metrics">
+            <div class="metric-card">
+              <div class="metric-title">Startup Idea Score</div>
+              <div class="metric-value">${scores.ideaScore}/100</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-title">Customer Pain Severity</div>
+              <div class="metric-value">${scores.painScore}/10</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-title">Market Timing Rating</div>
+              <div class="metric-value">${scores.timingScore}/10</div>
+            </div>
+          </div>
+    `)
+
+    if (names) {
+      printWindow.document.write(`
+        <h2 class="section-title">Suggested Startup Names</h2>
+        <div class="report-block">${formatMarkdownToHtml(names)}</div>
+      `)
+    }
+
+    if (taglines) {
+      printWindow.document.write(`
+        <h2 class="section-title">High-Impact Taglines</h2>
+        <div class="report-block">${formatMarkdownToHtml(taglines)}</div>
+      `)
+    }
+
+    if (bmc) {
+      printWindow.document.write(`
+        <h2 class="section-title page-break">Business Model Canvas</h2>
+        <div class="box-grid">
+          <div class="box"><h4>Value Propositions</h4><p>${bmc.valuePropositions}</p></div>
+          <div class="box"><h4>Customer Segments</h4><p>${bmc.customerSegments}</p></div>
+          <div class="box"><h4>Key Activities</h4><p>${bmc.keyActivities}</p></div>
+          <div class="box"><h4>Key Partners</h4><p>${bmc.keyPartners}</p></div>
+          <div class="box"><h4>Key Resources</h4><p>${bmc.keyResources}</p></div>
+          <div class="box"><h4>Customer Relationships</h4><p>${bmc.customerRelationships}</p></div>
+          <div class="box"><h4>Channels</h4><p>${bmc.channels}</p></div>
+          <div class="box"><h4>Cost Structure</h4><p>${bmc.costStructure}</p></div>
+          <div class="box"><h4>Revenue Streams</h4><p>${bmc.revenueStreams}</p></div>
+        </div>
+      `)
+    }
+
+    Object.entries(results).forEach(([key, val]) => {
+      const sectionTitle = SECTION_DETAILS[key]?.title || key.toUpperCase()
+      printWindow.document.write(`
+        <h2 class="section-title page-break">${sectionTitle}</h2>
+        <div class="report-block">${formatMarkdownToHtml(val)}</div>
+      `)
+    })
+
+    if (pitchDeck) {
+      printWindow.document.write(`
+        <h2 class="section-title page-break">Investor Pitch Deck Outline</h2>
+        <div class="report-block">${formatMarkdownToHtml(pitchDeck)}</div>
+      `)
+    }
+
+    printWindow.document.write(`
+          <div style="margin-top:50px; text-align:center; font-size:10px; color:#94a3b8; border-top:1px dashed #cbd5e1; padding-top:15px;" class="page-break">
+            Report compiled by StartupGPT 2.0 on ${new Date().toLocaleDateString()}
+          </div>
+        </body>
+      </html>
+    `)
+
+    printWindow.document.close()
+    printWindow.focus()
+
+    setTimeout(() => {
+      printWindow.print()
+      printWindow.close()
+    }, 600)
+  }
+
   const getReportSummaryText = () => {
     let summary = ''
     Object.entries(results).forEach(([key, val]) => {
@@ -472,13 +620,24 @@ function App() {
                 <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">
                   Venture Metric Indicators
                 </h3>
-                <button
-                  onClick={handleDownload}
-                  className="flex items-center gap-1.5 text-xs font-semibold text-indigo-400 hover:text-indigo-300 transition-colors bg-indigo-500/10 border border-indigo-500/20 px-3.5 py-1.5 rounded-xl hover:bg-indigo-500/20 active:scale-[0.98]"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  Download Blueprint (.md)
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleDownload}
+                    className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 hover:text-slate-300 transition-colors bg-white/5 border border-white/10 px-3 py-1.5 rounded-xl hover:bg-white/10 active:scale-[0.98]"
+                    title="Download as Markdown file (.md)"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    Download (.md)
+                  </button>
+                  <button
+                    onClick={handlePrintPdf}
+                    className="flex items-center gap-1.5 text-xs font-semibold text-indigo-400 hover:text-indigo-300 transition-colors bg-indigo-500/10 border border-indigo-500/20 px-3.5 py-1.5 rounded-xl hover:bg-indigo-500/20 active:scale-[0.98]"
+                    title="Print report or save as PDF"
+                  >
+                    <Presentation className="w-3.5 h-3.5" />
+                    Download PDF
+                  </button>
+                </div>
               </div>
               <ScoreCards scores={scores} />
             </div>
