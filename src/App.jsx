@@ -173,19 +173,16 @@ function App() {
     }
 
     // --- 2. CONSOLIDATED REAL AI RUNTIME (Resolves Rate Limits & Quotas) ---
-    // We consolidate what used to be 13 separate calls into 3 requests to avoid exceeding rate limits (5 RPM on Gemini free)
-    const promises = [
-      fetchSection('analysis', buildCombinedAnalysisPrompt(ideaText, selectedSections), systemPrompt, 7000),
-      fetchSection('brandkit', buildCombinedBrandKitPrompt(ideaText), systemPrompt, 1800),
-      fetchSection('jsondata', buildCombinedJsonPrompt(ideaText), 'Return only valid JSON.', 1000)
-    ]
-
+    // We run the 3 consolidated calls sequentially with delays to prevent hitting free rate limits (5 RPM)
     try {
-      const resultsArray = await Promise.all(promises)
-
-      const analysisOutput = resultsArray[0]
-      const brandKitOutput = resultsArray[1]
-      const jsonOutput = resultsArray[2]
+      const jsonOutput = await fetchSection('jsondata', buildCombinedJsonPrompt(ideaText), 'Return only valid JSON.', 1000)
+      
+      // Delay 1.5 seconds between requests to stagger workload
+      await new Promise(resolve => setTimeout(resolve, 1500))
+      const brandKitOutput = await fetchSection('brandkit', buildCombinedBrandKitPrompt(ideaText), systemPrompt, 1800)
+      
+      await new Promise(resolve => setTimeout(resolve, 1500))
+      const analysisOutput = await fetchSection('analysis', buildCombinedAnalysisPrompt(ideaText, selectedSections), systemPrompt, 7000)
 
       // A. Parse Analysis Sections
       const textReports = {}
