@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { MessageSquare, Send, Bot, User, Sparkles, Activity } from 'lucide-react'
+import { callGemini } from '../hooks/useGeminiAPI'
 
 const QUICK_CHIPS = [
   { label: 'B2B Pivot', text: 'What if I pivot my model from direct-to-consumer (B2C) to corporate B2B SaaS? How would my product value, channels, and pricing structure change?' },
@@ -8,7 +9,7 @@ const QUICK_CHIPS = [
   { label: 'Revenue Critique', text: 'Brutally critique my monetization strategy. List the top 2 leaks and suggest how to optimize my unit economics.' }
 ]
 
-export default function MentorChat({ idea, reportSummary, messages, setMessages, demoMode }) {
+export default function MentorChat({ idea, reportSummary, messages, setMessages, apiMode }) {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const chatEndRef = useRef(null)
@@ -28,8 +29,13 @@ export default function MentorChat({ idea, reportSummary, messages, setMessages,
     localStorage.setItem('sg_chat_history', JSON.stringify(updatedMessages))
     setLoading(true)
 
-    // Demo Mode Handler
-    if (demoMode) {
+    const systemContext = `You are StartupGPT, a sharp-minded co-founder and mentor. Keep answers extremely focused on this startup. Refuse to discuss unrelated topics. Here is the startup context:
+    Idea: "${idea}"
+    Summary of generated business intelligence: ${reportSummary ? reportSummary.slice(0, 3000) : 'Generating details...'}
+    Be honest, encouraging, and write in short, punchy paragraphs with bold items.`;
+
+    // --- 1. DEMO MODE ---
+    if (apiMode === 'demo') {
       setTimeout(() => {
         const query = text.toLowerCase()
         let reply = ""
@@ -50,12 +56,33 @@ export default function MentorChat({ idea, reportSummary, messages, setMessages,
         setMessages(finalMessages)
         localStorage.setItem('sg_chat_history', JSON.stringify(finalMessages))
         setLoading(false)
-      }, 1500) // 1.5s thinking delay for realism
+      }, 1500)
 
       return
     }
 
-    // Normal API Mode Handler
+    // --- 2. GEMINI MODE (Free Real AI) ---
+    if (apiMode === 'gemini') {
+      try {
+        const reply = await callGemini(text, systemContext, 800, updatedMessages);
+        const finalMessages = [...updatedMessages, { role: 'assistant', content: reply }];
+        setMessages(finalMessages)
+        localStorage.setItem('sg_chat_history', JSON.stringify(finalMessages))
+      } catch (err) {
+        console.error(err)
+        const errorMessages = [
+          ...updatedMessages,
+          { role: 'assistant', content: `⚠️ **Gemini Error**: I could not retrieve a response. Details: ${err.message}. Please check your VITE_GEMINI_API_KEY in the `.env` file.` }
+        ]
+        setMessages(errorMessages)
+        localStorage.setItem('sg_chat_history', JSON.stringify(errorMessages))
+      } finally {
+        setLoading(false)
+      }
+      return
+    }
+
+    // --- 3. CLAUDE MODE (Paid Real AI) ---
     try {
       const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY
       if (!apiKey || apiKey === 'your_key_here') {
@@ -78,10 +105,7 @@ export default function MentorChat({ idea, reportSummary, messages, setMessages,
         body: JSON.stringify({
           model: 'claude-3-5-sonnet-20241022',
           max_tokens: 800,
-          system: `You are StartupGPT, a sharp-minded co-founder and mentor. Keep answers extremely focused on this startup. Refuse to discuss unrelated topics. Here is the startup context:
-          Idea: "${idea}"
-          Summary of generated business intelligence: ${reportSummary ? reportSummary.slice(0, 3000) : 'Generating details...'}
-          Be honest, encouraging, and write in short, punchy paragraphs with bold items.`,
+          system: systemContext,
           messages: apiMessages.slice(-8)
         })
       })
@@ -101,7 +125,7 @@ export default function MentorChat({ idea, reportSummary, messages, setMessages,
       console.error(err)
       const errorMessages = [
         ...updatedMessages,
-        { role: 'assistant', content: `⚠️ **System Error**: I could not retrieve a response. Details: ${err.message}` }
+        { role: 'assistant', content: `⚠️ **Claude Error**: I could not retrieve a response. Details: ${err.message}` }
       ]
       setMessages(errorMessages)
       localStorage.setItem('sg_chat_history', JSON.stringify(errorMessages))
@@ -131,7 +155,7 @@ export default function MentorChat({ idea, reportSummary, messages, setMessages,
           </div>
           <div>
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200">
-              Co-Founder Mentorship Room {demoMode && <span className="text-[9px] text-amber-400 font-bold ml-1">(DEMO)</span>}
+              Co-Founder Mentorship Room <span className="text-[9px] text-indigo-400 font-bold ml-1 uppercase">({apiMode})</span>
             </h3>
             <p className="text-[9px] text-slate-400 font-medium">Equipped with full project context</p>
           </div>

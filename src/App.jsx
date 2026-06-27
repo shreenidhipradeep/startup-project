@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Rocket, Sparkles, AlertCircle, RefreshCw, ChevronLeft, LayoutGrid, Presentation, MessageSquare, Download, Play, ToggleLeft, ToggleRight } from 'lucide-react'
+import { Rocket, Sparkles, AlertCircle, RefreshCw, ChevronLeft, LayoutGrid, Presentation, MessageSquare, Download, Play } from 'lucide-react'
 import IdeaInput from './components/IdeaInput'
 import LoadingScreen from './components/LoadingScreen'
 import ScoreCards from './components/ScoreCards'
@@ -9,6 +9,7 @@ import SectionNav from './components/SectionNav'
 import ModelCanvas from './components/ModelCanvas'
 import MentorChat from './components/MentorChat'
 import { callClaude } from './hooks/useClaudeAPI'
+import { callGemini } from './hooks/useGeminiAPI'
 import { systemPrompt, sectionPrompts, scorePrompt, namesPrompt, taglinesPrompt, bmcPrompt, pitchDeckPrompt } from './prompts/sectionPrompts'
 import { mockFoodtech, mockFintech, mockEdtech, mockGeneric } from './prompts/mockData'
 
@@ -31,10 +32,14 @@ function App() {
   const [stage, setStage] = useState(() => localStorage.getItem('sg_stage') || 'input')
   const [idea, setIdea] = useState(() => localStorage.getItem('sg_idea') || '')
   
-  // Default to Demo Mode = true so it works out of the box for free!
-  const [demoMode, setDemoMode] = useState(() => {
-    const saved = localStorage.getItem('sg_demo_mode')
-    return saved ? saved === 'true' : true
+  // Choose AI Engine Mode: 'demo' | 'gemini' | 'claude'
+  // Default to 'gemini' if VITE_GEMINI_API_KEY is populated, else default to 'demo'
+  const [apiMode, setApiMode] = useState(() => {
+    const saved = localStorage.getItem('sg_api_mode')
+    if (saved) return saved
+    // Check if key is available in environment
+    const geminiKey = import.meta.env.VITE_GEMINI_API_KEY
+    return (geminiKey && geminiKey !== 'your_free_key_here' && geminiKey.trim() !== '') ? 'gemini' : 'demo'
   })
 
   const [activeSections, setActiveSections] = useState(() => {
@@ -63,14 +68,16 @@ function App() {
   
   const [error, setError] = useState('')
 
-  const toggleDemoMode = () => {
-    const newVal = !demoMode
-    setDemoMode(newVal)
-    localStorage.setItem('sg_demo_mode', newVal.toString())
+  const handleModeChange = (mode) => {
+    setApiMode(mode)
+    localStorage.setItem('sg_api_mode', mode)
   }
 
   const fetchSection = async (key, prompt, system, maxTokens) => {
     try {
+      if (apiMode === 'gemini') {
+        return await callGemini(prompt, system, maxTokens)
+      }
       return await callClaude(prompt, system, maxTokens)
     } catch (err) {
       console.error(`Error loading ${key} section:`, err)
@@ -84,8 +91,8 @@ function App() {
     setStage('loading')
     setError('')
 
-    // --- DEMO MODE RUNTIME ---
-    if (demoMode) {
+    // --- DEMO MOCK RUNTIME ---
+    if (apiMode === 'demo') {
       const text = ideaText.toLowerCase()
       let selectedMock = mockGeneric
 
@@ -123,7 +130,6 @@ function App() {
         selectedMock = mockEdtech
       }
 
-      // Simulate network latency for realism
       setTimeout(() => {
         const textReports = {}
         selectedSections.forEach((secId) => {
@@ -162,7 +168,7 @@ function App() {
       return
     }
 
-    // --- STANDARD API RUNTIME ---
+    // --- STANDARD API RUNTIME (Gemini or Claude) ---
     const promises = []
     const keys = []
 
@@ -229,7 +235,7 @@ function App() {
       const initialChat = [
         {
           role: 'assistant',
-          content: `Hello! I'm your Startup Co-Founder. I've analyzed your concept: **"${ideaText}"**.\n\nAsk me anything! We can brainstorm a B2B pivot, write investor cold emails, plan customer acquisition, or simulate "What If" scenarios. What's on your mind?`
+          content: `Hello! I'm your Startup Co-Founder (${apiMode === 'gemini' ? 'Gemini Mode' : 'Claude Mode'}). I've analyzed your concept: **"${ideaText}"**.\n\nAsk me anything! We can brainstorm a B2B pivot, write investor cold emails, plan customer acquisition, or simulate "What If" scenarios. What's on your mind?`
         }
       ]
 
@@ -284,7 +290,6 @@ function App() {
     localStorage.removeItem('sg_chat_history')
   }
 
-  // Generate markdown and trigger direct local download
   const handleDownload = () => {
     let md = `# StartupGPT 2.0 - Venture Validation Report\n\n`;
     md += `### Original Concept\n> "${idea}"\n\n`;
@@ -351,7 +356,7 @@ function App() {
             <div className="bg-gradient-to-tr from-indigo-500 to-purple-600 p-2 rounded-xl text-white shadow-md shadow-indigo-500/10">
               <Rocket className="w-5 h-5 animate-pulse" />
             </div>
-            <div>
+            <div className="hidden sm:block">
               <h1 className="text-lg font-bold tracking-tight font-sans">
                 StartupGPT <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">2.0</span>
               </h1>
@@ -359,19 +364,39 @@ function App() {
             </div>
           </div>
 
-          {/* Toggle Switches */}
-          <div className="flex items-center gap-4">
-            <button
-              onClick={toggleDemoMode}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold select-none transition-all ${
-                demoMode
-                  ? 'bg-amber-500/15 border-amber-500/35 text-amber-300 shadow-md shadow-amber-500/5'
-                  : 'bg-indigo-500/10 border-indigo-500/25 text-indigo-300'
-              }`}
-            >
-              {demoMode ? <ToggleRight className="w-4 h-4 text-amber-400" /> : <ToggleLeft className="w-4 h-4 text-indigo-400" />}
-              {demoMode ? 'Demo Mode Active (Free)' : 'Live API Key Mode'}
-            </button>
+          {/* Engine Selector Segmented Control */}
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1 bg-slate-900/60 p-1 rounded-xl border border-white/5">
+              <button
+                type="button"
+                onClick={() => handleModeChange('demo')}
+                className={`px-2.5 py-1 rounded-lg text-[9px] font-bold uppercase transition-all select-none ${
+                  apiMode === 'demo' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'text-slate-400 hover:text-slate-200 border border-transparent'
+                }`}
+              >
+                Demo
+              </button>
+              <button
+                type="button"
+                onClick={() => handleModeChange('gemini')}
+                className={`px-2.5 py-1 rounded-lg text-[9px] font-bold uppercase transition-all select-none ${
+                  apiMode === 'gemini' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'text-slate-400 hover:text-slate-200 border border-transparent'
+                }`}
+                title="Use Gemini 1.5 Flash - Free AI Key"
+              >
+                Gemini
+              </button>
+              <button
+                type="button"
+                onClick={() => handleModeChange('claude')}
+                className={`px-2.5 py-1 rounded-lg text-[9px] font-bold uppercase transition-all select-none ${
+                  apiMode === 'claude' ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30' : 'text-slate-400 hover:text-slate-200 border border-transparent'
+                }`}
+                title="Use Claude 3.5 Sonnet - Paid API Key"
+              >
+                Claude
+              </button>
+            </div>
 
             {stage === 'results' && (
               <button
@@ -379,13 +404,9 @@ function App() {
                 className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white transition-colors px-3 py-1.5 rounded-xl border border-white/5 bg-white/5"
               >
                 <ChevronLeft className="w-3.5 h-3.5" />
-                New Idea
+                New
               </button>
             )}
-            <span className="text-xs text-slate-400 font-medium hidden sm:flex items-center gap-1.5 bg-brand-900/40 border border-white/5 px-2.5 py-1 rounded-xl">
-              <span className={`w-1.5 h-1.5 rounded-full ${stage === 'loading' ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'}`}></span>
-              {stage === 'loading' ? 'Processing' : 'System Ready'}
-            </span>
           </div>
         </div>
       </header>
@@ -412,8 +433,8 @@ function App() {
           <div className="w-full flex flex-col items-center space-y-8">
             <div className="text-center max-w-2xl space-y-3">
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-xs text-indigo-300 font-medium">
-                <Play className="w-3 h-3 text-indigo-400" />
-                Free Demo Mode Integration
+                <Sparkles className="w-3 h-3 text-indigo-400 animate-spin" />
+                Real-Time AI Integrations
               </div>
               <h2 className="text-3xl md:text-5xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-b from-white to-slate-300 font-sans leading-tight">
                 Launch Your Idea With Premium AI Mentorship
@@ -507,7 +528,7 @@ function App() {
                   reportSummary={getReportSummaryText()}
                   messages={chatHistory}
                   setMessages={setChatHistory}
-                  demoMode={demoMode}
+                  apiMode={apiMode}
                 />
               </div>
             )}
@@ -517,7 +538,7 @@ function App() {
 
       {/* Footer */}
       <footer className="border-t border-white/5 py-6 text-center text-xs text-slate-500 mt-12">
-        <p>© {new Date().getFullYear()} StartupGPT. Powered by Claude 3.5 Sonnet.</p>
+        <p>© {new Date().getFullYear()} StartupGPT. Powered by Claude 3.5 Sonnet & Gemini 1.5 Flash.</p>
       </footer>
     </div>
   )
