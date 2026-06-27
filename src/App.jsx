@@ -12,9 +12,7 @@ import { callClaude } from './hooks/useClaudeAPI'
 import { callGemini } from './hooks/useGeminiAPI'
 import { 
   systemPrompt, 
-  buildCombinedAnalysisPrompt, 
-  buildCombinedBrandKitPrompt, 
-  buildCombinedJsonPrompt 
+  buildUnifiedVenturePrompt
 } from './prompts/sectionPrompts'
 import { mockFoodtech, mockFintech, mockEdtech, mockGeneric } from './prompts/mockData'
 
@@ -172,76 +170,65 @@ function App() {
       return
     }
 
-    // --- 2. CONSOLIDATED REAL AI RUNTIME (Resolves Rate Limits & Quotas) ---
-    // We run the 3 consolidated calls sequentially with delays to prevent hitting free rate limits (5 RPM)
+    // --- 2. UNIFIED REAL AI RUNTIME (Resolves Rate Limits & Quotas Completely) ---
+    // We execute exactly 1 single unified API request to completely eliminate rate limits (15/20 RPM)
     try {
-      const jsonOutput = await fetchSection('jsondata', buildCombinedJsonPrompt(ideaText), 'Return only valid JSON.', 1000)
-      
-      // Delay 1.5 seconds between requests to stagger workload
-      await new Promise(resolve => setTimeout(resolve, 1500))
-      const brandKitOutput = await fetchSection('brandkit', buildCombinedBrandKitPrompt(ideaText), systemPrompt, 1800)
-      
-      await new Promise(resolve => setTimeout(resolve, 1500))
-      const analysisOutput = await fetchSection('analysis', buildCombinedAnalysisPrompt(ideaText, selectedSections), systemPrompt, 7000)
+      const output = await fetchSection('unified', buildUnifiedVenturePrompt(ideaText, selectedSections), systemPrompt, 7500)
 
-      // A. Parse Analysis Sections
-      const textReports = {}
-      selectedSections.forEach((secId) => {
-        // Loose match regex to support different output headings (e.g. ===IDEA===, ### IDEA, **IDEA**)
-        const regex = new RegExp(`(?:===|###|#|\\*\\*|\\b)${secId.toUpperCase()}(?:===|\\b|\\*\\*)\\s*([\\s\\S]*?)(?=(===|###|#|\\*\\*|\\b)(?:IDEA|CUSTOMER|MARKET|BUSINESS|BUILD|RISK|VALIDATION|TRACTION)(?:===|\\b|\\*\\*)|$)`, 'i');
-        const match = analysisOutput.match(regex)
-        
-        if (match && match[1].trim().length > 10) {
-          textReports[secId] = match[1].trim()
-        } else {
-          // Fallback: If only 1 section was selected, output the whole result
-          if (selectedSections.length === 1 && !analysisOutput.includes("Connection Error")) {
-            textReports[secId] = analysisOutput.trim()
-          } else {
-            textReports[secId] = analysisOutput.includes("Connection Error")
-              ? analysisOutput
-              : `Module analysis processed. Complete generated contents available below:\n\n${analysisOutput}`
+      // A. Parse metrics & scores JSON
+      let parsedScores = { ideaScore: 78, painScore: 8, timingScore: 8 }
+      let parsedBmc = null
+
+      const metricsMatch = output.match(/===METRICS===([\s\S]*?)(?=(===NAMES===|===TAGLINES===|===PITCH===|===IDEA===|===CUSTOMER===|===MARKET===|===BUSINESS===|===BUILD===|===RISK===|===VALIDATION===|===TRACTION===|$))/i)
+      if (metricsMatch) {
+        try {
+          const cleanJson = metricsMatch[1].replace(/```json/g, '').replace(/```/g, '').trim()
+          const parsedData = JSON.parse(cleanJson)
+          parsedScores = {
+            ideaScore: parsedData.ideaScore || 78,
+            painScore: parsedData.painScore || 8,
+            timingScore: parsedData.timingScore || 8
           }
+          parsedBmc = parsedData.bmc || null
+        } catch (e) {
+          console.error("Failed to parse unified metrics JSON", e)
         }
-      })
+      }
 
       // B. Parse Brand Kit
       let retrievedNames = ''
       let retrievedTaglines = ''
       let retrievedPitchDeck = ''
 
-      const nameMatch = brandKitOutput.match(/===NAMES===([\s\S]*?)(?=(===TAGLINES===|===PITCH===|$))/i)
-      const taglineMatch = brandKitOutput.match(/===TAGLINES===([\s\S]*?)(?=(===NAMES===|===PITCH===|$))/i)
-      const pitchMatch = brandKitOutput.match(/===PITCH===([\s\S]*?)(?=(===NAMES===|===TAGLINES===|$))/i)
+      const nameMatch = output.match(/===NAMES===([\s\S]*?)(?=(===TAGLINES===|===PITCH===|===METRICS===|===IDEA===|===CUSTOMER===|===MARKET===|===BUSINESS===|===BUILD===|===RISK===|===VALIDATION===|===TRACTION===|$))/i)
+      const taglineMatch = output.match(/===TAGLINES===([\s\S]*?)(?=(===NAMES===|===PITCH===|===METRICS===|===IDEA===|===CUSTOMER===|===MARKET===|===BUSINESS===|===BUILD===|===RISK===|===VALIDATION===|===TRACTION===|$))/i)
+      const pitchMatch = output.match(/===PITCH===([\s\S]*?)(?=(===NAMES===|===TAGLINES===|===METRICS===|===IDEA===|===CUSTOMER===|===MARKET===|===BUSINESS===|===BUILD===|===RISK===|===VALIDATION===|===TRACTION===|$))/i)
 
       if (nameMatch) retrievedNames = nameMatch[1].trim()
-      else retrievedNames = brandKitOutput.includes("Connection Error") ? brandKitOutput : "Names generation compiled."
+      else retrievedNames = output.includes("Connection Error") ? output : "Names generation compiled."
 
       if (taglineMatch) retrievedTaglines = taglineMatch[1].trim()
-      else retrievedTaglines = brandKitOutput.includes("Connection Error") ? brandKitOutput : "Taglines generation compiled."
+      else retrievedTaglines = output.includes("Connection Error") ? output : "Taglines generation compiled."
 
       if (pitchMatch) retrievedPitchDeck = pitchMatch[1].trim()
-      else retrievedPitchDeck = brandKitOutput.includes("Connection Error") ? brandKitOutput : "Pitch deck outline compiled."
+      else retrievedPitchDeck = output.includes("Connection Error") ? output : "Pitch deck outline compiled."
 
-      // C. Parse JSON Scores & BMC
-      let parsedScores = { ideaScore: 78, painScore: 8, timingScore: 8 }
-      let parsedBmc = null
-
-      try {
-        const cleanJson = jsonOutput.replace(/```json/g, '').replace(/```/g, '').trim()
-        const parsedData = JSON.parse(cleanJson)
-        parsedScores = {
-          ideaScore: parsedData.ideaScore || 78,
-          painScore: parsedData.painScore || 8,
-          timingScore: parsedData.timingScore || 8
+      // C. Parse Analysis Sections
+      const textReports = {}
+      selectedSections.forEach((secId) => {
+        const regex = new RegExp(`===${secId.toUpperCase()}===([\\s\\S]*?)(?=(===METRICS===|===NAMES===|===TAGLINES===|===PITCH===|===IDEA===|===CUSTOMER===|===MARKET===|===BUSINESS===|===BUILD===|===RISK===|===VALIDATION===|===TRACTION===|$))`, 'i')
+        const match = output.match(regex)
+        
+        if (match && match[1].trim().length > 10) {
+          textReports[secId] = match[1].trim()
+        } else {
+          if (output.includes("Connection Error")) {
+            textReports[secId] = output
+          } else {
+            textReports[secId] = `Module analysis processed. Complete generated contents available below:\n\n${output}`
+          }
         }
-        parsedBmc = parsedData.bmc || null
-      } catch (e) {
-        console.error("Failed to parse combined JSON data, falling back.", e)
-        if (jsonOutput.includes("Connection Error")) {
-          // Keep default fallbacks for scores
-        }
-      }
+      })
 
       const initialChat = [
         {

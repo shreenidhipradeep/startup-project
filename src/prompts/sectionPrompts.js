@@ -178,3 +178,66 @@ export const buildCombinedJsonPrompt = (idea) => {
   }`;
 };
 
+// Unified single-call builder to prevent any rate limit errors on Gemini free tier keys
+export const buildUnifiedVenturePrompt = (idea, selectedSections) => {
+  let prompt = `You are StartupGPT, a world-class AI co-founder and venture builder. Analyze this startup concept: "${idea}" and construct the complete venture blueprint.
+  
+  CRITICAL FORMATTING RULES:
+  You MUST return your entire response using exact delimiters on a new line: ===[ID]===. Do not put markdown codeblocks around these delimiters. Do not add markdown styling inside the delimiters.
+  
+  Expected Output Structure:
+  ===METRICS===
+  {
+    "ideaScore": 75,
+    "painScore": 8,
+    "timingScore": 9,
+    "bmc": {
+      "keyPartners": "key partners list...",
+      "keyActivities": "key activities list...",
+      "keyResources": "key resources list...",
+      "valuePropositions": "value propositions list...",
+      "customerRelationships": "customer relationships list...",
+      "channels": "channels list...",
+      "customerSegments": "customer segments list...",
+      "costStructure": "cost structure list...",
+      "revenueStreams": "revenue streams list..."
+    }
+  }
+  
+  ===NAMES===
+  [Provide 5 name ideas with domains and why it works]
+  
+  ===TAGLINES===
+  [Provide 5 high-impact taglines, each on a new line]
+  
+  ===PITCH===
+  [Provide 10-slide pitch deck outline]
+  
+  For each of the selected validation sections below, write a detailed, highly practical analysis block:
+  `;
+
+  selectedSections.forEach(secId => {
+    prompt += `\n===${secId.toUpperCase()}===\n`;
+    if (secId === 'idea') {
+      prompt += `Instructions: Detail Innovation Level (Unique/Competitive/Saturated), Market Category, Difficulty, Is This Already Built (and stand-out angle), Trend Matcher, 3 Idea Improvers, and India Market Readiness.\n`;
+    } else if (secId === 'customer') {
+      prompt += `Instructions: Generate 3 detailed Customer Personas (Name, Age, Job, Problem, Willingness to Pay), Early Adopter Hook (where to find them), Customer Pain Score 1-10, 10 interview questions, and Customer Journey Map.\n`;
+    } else if (secId === 'market') {
+      prompt += `Instructions: Audit Competitors (strengths/weaknesses), estimate Market Size (TAM, SAM, SOM in India), write SWOT, and identify Blue Ocean positioning.\n`;
+    } else if (secId === 'business') {
+      prompt += `Instructions: Detail Revenue Models, Pricing Strategy, Break-Even volume, Unit Economics (CAC, LTV), and Monetization Timeline.\n`;
+    } else if (secId === 'build') {
+      prompt += `Instructions: Outline MVP Roadmap (Phase 1, 2, 3), Tech Stack Recommender, No-Code options, Launch Checklist, and Growth Hacking.\n`;
+    } else if (secId === 'risk') {
+      prompt += `Instructions: Compile Risk Radar (top 5 risks, mitigation), Honest Fail Check, Legal & Compliance (DPDP in India), and 3 Pivot Suggestions.\n`;
+    } else if (secId === 'validation') {
+      prompt += `Instructions: Write Landing Page Copy (Headline, Features, CTA), Waitlist Strategy to collect 1,000 emails, and 10 survey questions.\n`;
+    } else if (secId === 'traction') {
+      prompt += `Instructions: Detail Traction Roadmap (week-by-week for 3 months), Partnership Finder (3 strategic targets, cold template), and Product Hunt Guide.\n`;
+    }
+  });
+
+  return prompt;
+};
+
+
