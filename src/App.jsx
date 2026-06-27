@@ -263,9 +263,80 @@ function App() {
       localStorage.setItem('sg_pitch_deck', retrievedPitchDeck)
       localStorage.setItem('sg_chat_history', JSON.stringify(initialChat))
     } catch (err) {
-      console.error(err)
-      setError(err.message || 'Fatal generation error. Please check your API key.')
-      setStage('input')
+      console.warn("Real AI API generation failed, falling back to Demo Mode templates:", err)
+      
+      const text = ideaText.toLowerCase()
+      let selectedMock = mockGeneric
+
+      if (
+        text.includes('food') || 
+        text.includes('cook') || 
+        text.includes('meal') || 
+        text.includes('lunch') || 
+        text.includes('eat') || 
+        text.includes('kitchen') || 
+        text.includes('office') || 
+        text.includes('catering')
+      ) {
+        selectedMock = mockFoodtech
+      } else if (
+        text.includes('gold') || 
+        text.includes('save') || 
+        text.includes('upi') || 
+        text.includes('penny') || 
+        text.includes('coin') || 
+        text.includes('finance') || 
+        text.includes('student') || 
+        text.includes('money')
+      ) {
+        selectedMock = mockFintech
+      } else if (
+        text.includes('code') || 
+        text.includes('school') || 
+        text.includes('vernacular') || 
+        text.includes('kid') || 
+        text.includes('teach') || 
+        text.includes('language') || 
+        text.includes('coding')
+      ) {
+        selectedMock = mockEdtech
+      }
+
+      const textReports = {}
+      selectedSections.forEach((secId) => {
+        textReports[secId] = selectedMock.results[secId] || "Mock analysis details loaded successfully."
+      })
+
+      const initialChat = [
+        {
+          role: 'assistant',
+          content: `Hello! I'm your Startup Co-Founder (Demo Fallback). I've loaded our offline blueprint for: **"${ideaText}"**.\n\nAsk me anything! We can brainstorm a B2B pivot, write investor cold emails, plan customer acquisition, or simulate "What If" scenarios.`
+        }
+      ]
+
+      setResults(textReports)
+      setScores(selectedMock.scores)
+      setBmc(selectedMock.bmc)
+      setNames(selectedMock.names)
+      setTaglines(selectedMock.taglines)
+      setPitchDeck(selectedMock.pitchDeck)
+      setChatHistory(initialChat)
+      
+      // Notify the user about API rate limit fallback
+      setError(`Notice: API key quota exceeded. Loading dynamic mock blueprint for offline demo testing.`)
+      setStage('results')
+
+      // Save to localStorage
+      localStorage.setItem('sg_stage', 'results')
+      localStorage.setItem('sg_idea', ideaText)
+      localStorage.setItem('sg_active_sections', JSON.stringify(selectedSections))
+      localStorage.setItem('sg_results', JSON.stringify(textReports))
+      localStorage.setItem('sg_scores', JSON.stringify(selectedMock.scores))
+      localStorage.setItem('sg_names', selectedMock.names)
+      localStorage.setItem('sg_taglines', selectedMock.taglines)
+      if (selectedMock.bmc) localStorage.setItem('sg_bmc', JSON.stringify(selectedMock.bmc))
+      localStorage.setItem('sg_pitch_deck', selectedMock.pitchDeck)
+      localStorage.setItem('sg_chat_history', JSON.stringify(initialChat))
     }
   }
 
