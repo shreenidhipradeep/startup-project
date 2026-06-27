@@ -113,3 +113,65 @@ export const pitchDeckPrompt = (idea) =>
   - Slide Title
   - Key Visual Recommendation
   - Bulleted Content points to write on the slide`;
+
+// Combined builders to reduce parallel API calls (safeguards free key rate limits)
+export const buildCombinedAnalysisPrompt = (idea, selectedSections) => {
+  let prompt = `You are tasked with analyzing this startup idea: "${idea}".\n\n`;
+  prompt += `Generate a detailed report covering the selected areas below. For EACH selected area, you MUST begin the content with the exact delimiter on a new line: ===[SECTION_ID]=== (e.g. ===IDEA=== or ===CUSTOMER===). Do not add markdown styling inside the delimiters. Keep the content detailed, direct, and highly specific to the idea.\n\n`;
+  
+  selectedSections.forEach(secId => {
+    prompt += `===${secId.toUpperCase()}===\n`;
+    prompt += `Generate details for: ${secId.toUpperCase()} MODULE\n`;
+    if (secId === 'idea') {
+      prompt += `Instructions: Analyze this startup idea. Detail Idea Score /100, Innovation Level, Market Category, Difficulty, Is This Already Built (stand-out angle), Trend Matcher, 3 Idea Improvers, Problem-Solution Fit 1-10, and India Market Readiness Score.\n\n`;
+    } else if (secId === 'customer') {
+      prompt += `Instructions: Generate 3 detailed Customer Personas (Name, Age, Job, Problem, Willingness to Pay), Early Adopters (where to find, message hook), Customer Pain Score 1-10, 10 Customer Interview Questions, Willingness to Pay Estimator (free/paid ratio), and Customer Journey Map.\n\n`;
+    } else if (secId === 'market') {
+      prompt += `Instructions: Audit 4-5 Competitors (strengths/weaknesses), estimate Market Size (TAM, SAM, SOM in India/global), write SWOT Analysis (2 items each), identify Blue Ocean positioning, Competitor Weakness Exploitation plan, and Timing Analyzer.\n\n`;
+    } else if (secId === 'business') {
+      prompt += `Instructions: Detail 2-3 Revenue Models, Pricing Strategy, Break-Even volume, Unit Economics (CAC, LTV, ratio), Funding Requirements (with budget breakdown), and Monetization Timeline for Year 1.\n\n`;
+    } else if (secId === 'build') {
+      prompt += `Instructions: Outline MVP Roadmap (Phase 1, 2, 3), Tech Stack Recommender, No-Code vs Code options, Launch Checklist (15 points), Growth Hacking strategies, and Hiring Roadmap.\n\n`;
+    } else if (secId === 'risk') {
+      prompt += `Instructions: Compile Risk Radar (top 5 risks, severity, mitigation), "Will It Fail" Honest Check (top 3 reasons), Legal & Compliance details (GDPR/DPDP act in India), Startup Graveyard lessons (2 failed startups), and 3 Pivot Suggestions.\n\n`;
+    } else if (secId === 'validation') {
+      prompt += `Instructions: Write Landing Page Copy (Headline, Subheadline, 3 Features, CTA, Footer), Waitlist Strategy (to collect 1,000 emails), Survey Generator (10 validation questions), and Press Release.\n\n`;
+    } else if (secId === 'traction') {
+      prompt += `Instructions: Detail Traction Roadmap (week-by-week for 3 months), Partnership Finder (3 strategic targets, cold template), and Product Hunt Launch Guide.\n\n`;
+    }
+  });
+
+  return prompt;
+};
+
+export const buildCombinedBrandKitPrompt = (idea) => {
+  let prompt = `For startup idea: "${idea}" — generate name suggestions, taglines, and a pitch deck outline.\n\n`;
+  prompt += `Format the output using exact delimiters on a new line: ===NAMES===, ===TAGLINES===, and ===PITCH===. Do not put markdown blocks around the delimiters.\n\n`;
+  prompt += `===NAMES===\n${namesPrompt(idea)}\n\n`;
+  prompt += `===TAGLINES===\n${taglinesPrompt(idea)}\n\n`;
+  prompt += `===PITCH===\n${pitchDeckPrompt(idea)}\n\n`;
+  return prompt;
+};
+
+export const buildCombinedJsonPrompt = (idea) => {
+  return `For startup idea: "${idea}" — analyze the metrics and Business Model Canvas.
+  Respond ONLY with a valid JSON object. Do not include markdown codeblocks or any other text.
+  The JSON structure must match:
+  {
+    "ideaScore": 75,
+    "painScore": 8,
+    "timingScore": 9,
+    "bmc": {
+      "keyPartners": "key partners list...",
+      "keyActivities": "key activities list...",
+      "keyResources": "key resources list...",
+      "valuePropositions": "value propositions list...",
+      "customerRelationships": "customer relationships list...",
+      "channels": "channels list...",
+      "customerSegments": "customer segments list...",
+      "costStructure": "cost structure list...",
+      "revenueStreams": "revenue streams list..."
+    }
+  }`;
+};
+

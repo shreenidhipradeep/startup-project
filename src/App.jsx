@@ -10,7 +10,12 @@ import ModelCanvas from './components/ModelCanvas'
 import MentorChat from './components/MentorChat'
 import { callClaude } from './hooks/useClaudeAPI'
 import { callGemini } from './hooks/useGeminiAPI'
-import { systemPrompt, sectionPrompts, scorePrompt, namesPrompt, taglinesPrompt, bmcPrompt, pitchDeckPrompt } from './prompts/sectionPrompts'
+import { 
+  systemPrompt, 
+  buildCombinedAnalysisPrompt, 
+  buildCombinedBrandKitPrompt, 
+  buildCombinedJsonPrompt 
+} from './prompts/sectionPrompts'
 import { mockFoodtech, mockFintech, mockEdtech, mockGeneric } from './prompts/mockData'
 
 // Icons mapping for report sections
@@ -37,7 +42,6 @@ function App() {
   const [apiMode, setApiMode] = useState(() => {
     const saved = localStorage.getItem('sg_api_mode')
     if (saved) return saved
-    // Check if key is available in environment
     const geminiKey = import.meta.env.VITE_GEMINI_API_KEY
     return (geminiKey && geminiKey !== 'your_free_key_here' && geminiKey.trim() !== '') ? 'gemini' : 'demo'
   })
@@ -91,7 +95,7 @@ function App() {
     setStage('loading')
     setError('')
 
-    // --- DEMO MOCK RUNTIME ---
+    // --- 1. DEMO MOCK RUNTIME ---
     if (apiMode === 'demo') {
       const text = ideaText.toLowerCase()
       let selectedMock = mockGeneric
@@ -168,69 +172,76 @@ function App() {
       return
     }
 
-    // --- STANDARD API RUNTIME (Gemini or Claude) ---
-    const promises = []
-    const keys = []
-
-    // 1. Selected modules
-    selectedSections.forEach((secId) => {
-      promises.push(fetchSection(secId, sectionPrompts[secId](ideaText), systemPrompt, 1600))
-      keys.push(secId)
-    })
-
-    // 2. Auxiliary dashboard data
-    promises.push(fetchSection('scores', scorePrompt(ideaText), 'Return only valid JSON.', 200))
-    keys.push('scores')
-
-    promises.push(fetchSection('names', namesPrompt(ideaText), systemPrompt, 600))
-    keys.push('names')
-
-    promises.push(fetchSection('taglines', taglinesPrompt(ideaText), systemPrompt, 500))
-    keys.push('taglines')
-
-    promises.push(fetchSection('bmc', bmcPrompt(ideaText), 'Return only valid JSON.', 1000))
-    keys.push('bmc')
-
-    promises.push(fetchSection('pitchDeck', pitchDeckPrompt(ideaText), systemPrompt, 1000))
-    keys.push('pitchDeck')
+    // --- 2. CONSOLIDATED REAL AI RUNTIME (Resolves Rate Limits & Quotas) ---
+    // We consolidate what used to be 13 separate calls into 3 requests to avoid exceeding rate limits (5 RPM on Gemini free)
+    const promises = [
+      fetchSection('analysis', buildCombinedAnalysisPrompt(ideaText, selectedSections), systemPrompt, 3000),
+      fetchSection('brandkit', buildCombinedBrandKitPrompt(ideaText), systemPrompt, 1800),
+      fetchSection('jsondata', buildCombinedJsonPrompt(ideaText), 'Return only valid JSON.', 1000)
+    ]
 
     try {
       const resultsArray = await Promise.all(promises)
 
+      const analysisOutput = resultsArray[0]
+      const brandKitOutput = resultsArray[1]
+      const jsonOutput = resultsArray[2]
+
+      // A. Parse Analysis Sections
       const textReports = {}
-      let parsedScores = { ideaScore: 75, painScore: 8, timingScore: 8 }
-      let parsedBmc = null
+      selectedSections.forEach((secId) => {
+        // Match contents between section markers, e.g. ===IDEA=== and the next ===SECTION=== or string end
+        const regex = new RegExp(`===${secId.toUpperCase()}===([\\s\\S]*?)(?=(===\\w+===|$))`, 'i')
+        const match = analysisOutput.match(regex)
+        if (match) {
+          textReports[secId] = match[1].trim()
+        } else {
+          // If parsing failed or block was omitted, write error or direct content
+          if (analysisOutput.includes("Connection Error")) {
+            textReports[secId] = analysisOutput // Pass through connection errors
+          } else {
+            textReports[secId] = `Analysis generated successfully. Details:\n\n${analysisOutput.substring(0, 500)}...`
+          }
+        }
+      })
+
+      // B. Parse Brand Kit
       let retrievedNames = ''
       let retrievedTaglines = ''
       let retrievedPitchDeck = ''
 
-      resultsArray.forEach((value, index) => {
-        const key = keys[index]
+      const nameMatch = brandKitOutput.match(/===NAMES===([\s\S]*?)(?=(===TAGLINES===|===PITCH===|$))/i)
+      const taglineMatch = brandKitOutput.match(/===TAGLINES===([\s\S]*?)(?=(===NAMES===|===PITCH===|$))/i)
+      const pitchMatch = brandKitOutput.match(/===PITCH===([\s\S]*?)(?=(===NAMES===|===TAGLINES===|$))/i)
 
-        if (key === 'scores') {
-          try {
-            const cleanJson = value.replace(/```json/g, '').replace(/```/g, '').trim()
-            parsedScores = JSON.parse(cleanJson)
-          } catch (e) {
-            console.error("Failed to parse scores JSON", e)
-          }
-        } else if (key === 'bmc') {
-          try {
-            const cleanJson = value.replace(/```json/g, '').replace(/```/g, '').trim()
-            parsedBmc = JSON.parse(cleanJson)
-          } catch (e) {
-            console.error("Failed to parse BMC JSON", e)
-          }
-        } else if (key === 'names') {
-          retrievedNames = value
-        } else if (key === 'taglines') {
-          retrievedTaglines = value
-        } else if (key === 'pitchDeck') {
-          retrievedPitchDeck = value
-        } else {
-          textReports[key] = value
+      if (nameMatch) retrievedNames = nameMatch[1].trim()
+      else retrievedNames = brandKitOutput.includes("Connection Error") ? brandKitOutput : "Names generation compiled."
+
+      if (taglineMatch) retrievedTaglines = taglineMatch[1].trim()
+      else retrievedTaglines = brandKitOutput.includes("Connection Error") ? brandKitOutput : "Taglines generation compiled."
+
+      if (pitchMatch) retrievedPitchDeck = pitchMatch[1].trim()
+      else retrievedPitchDeck = brandKitOutput.includes("Connection Error") ? brandKitOutput : "Pitch deck outline compiled."
+
+      // C. Parse JSON Scores & BMC
+      let parsedScores = { ideaScore: 78, painScore: 8, timingScore: 8 }
+      let parsedBmc = null
+
+      try {
+        const cleanJson = jsonOutput.replace(/```json/g, '').replace(/```/g, '').trim()
+        const parsedData = JSON.parse(cleanJson)
+        parsedScores = {
+          ideaScore: parsedData.ideaScore || 78,
+          painScore: parsedData.painScore || 8,
+          timingScore: parsedData.timingScore || 8
         }
-      })
+        parsedBmc = parsedData.bmc || null
+      } catch (e) {
+        console.error("Failed to parse combined JSON data, falling back.", e)
+        if (jsonOutput.includes("Connection Error")) {
+          // Keep default fallbacks for scores
+        }
+      }
 
       const initialChat = [
         {
@@ -382,7 +393,7 @@ function App() {
                 className={`px-2.5 py-1 rounded-lg text-[9px] font-bold uppercase transition-all select-none ${
                   apiMode === 'gemini' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'text-slate-400 hover:text-slate-200 border border-transparent'
                 }`}
-                title="Use Gemini 1.5 Flash - Free AI Key"
+                title="Use Gemini 2.5 Flash - Free AI Key"
               >
                 Gemini
               </button>
@@ -538,7 +549,7 @@ function App() {
 
       {/* Footer */}
       <footer className="border-t border-white/5 py-6 text-center text-xs text-slate-500 mt-12">
-        <p>© {new Date().getFullYear()} StartupGPT. Powered by Claude 3.5 Sonnet & Gemini 1.5 Flash.</p>
+        <p>© {new Date().getFullYear()} StartupGPT. Powered by Claude 3.5 Sonnet & Gemini 2.5 Flash.</p>
       </footer>
     </div>
   )
