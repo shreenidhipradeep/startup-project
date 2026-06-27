@@ -10,8 +10,9 @@ import ModelCanvas from './components/ModelCanvas'
 import MentorChat from './components/MentorChat'
 import { callClaude } from './hooks/useClaudeAPI'
 import { callGemini } from './hooks/useGeminiAPI'
+import { callGroq } from './hooks/useGroqAPI'
 import { 
-  systemPrompt, 
+  systemPrompt,
   buildUnifiedVenturePrompt
 } from './prompts/sectionPrompts'
 import { mockFoodtech, mockFintech, mockEdtech, mockGeneric } from './prompts/mockData'
@@ -35,11 +36,15 @@ function App() {
   const [stage, setStage] = useState(() => localStorage.getItem('sg_stage') || 'input')
   const [idea, setIdea] = useState(() => localStorage.getItem('sg_idea') || '')
   
-  // Choose AI Engine Mode: 'demo' | 'gemini' | 'claude'
-  // Default to 'gemini' if VITE_GEMINI_API_KEY is populated, else default to 'demo'
+  // Choose AI Engine Mode: 'demo' | 'gemini' | 'groq' | 'claude'
+  // Default to 'groq' if VITE_GROQ_API_KEY is populated, then 'gemini', else 'demo'
   const [apiMode, setApiMode] = useState(() => {
     const saved = localStorage.getItem('sg_api_mode')
     if (saved) return saved
+    const groqKey = import.meta.env.VITE_GROQ_API_KEY
+    if (groqKey && groqKey !== 'your_groq_key_here' && groqKey.startsWith('gsk_')) {
+      return 'groq'
+    }
     const geminiKey = import.meta.env.VITE_GEMINI_API_KEY
     return (geminiKey && geminiKey !== 'your_free_key_here' && geminiKey.trim() !== '') ? 'gemini' : 'demo'
   })
@@ -79,6 +84,9 @@ function App() {
     try {
       if (apiMode === 'gemini') {
         return await callGemini(prompt, system, maxTokens)
+      }
+      if (apiMode === 'groq') {
+        return await callGroq(prompt, system, maxTokens)
       }
       return await callClaude(prompt, system, maxTokens)
     } catch (err) {
@@ -604,6 +612,16 @@ function App() {
                 title="Use Gemini 2.5 Flash - Free AI Key"
               >
                 Gemini
+              </button>
+              <button
+                type="button"
+                onClick={() => handleModeChange('groq')}
+                className={`px-2.5 py-1 rounded-lg text-[9px] font-bold uppercase transition-all select-none ${
+                  apiMode === 'groq' ? 'bg-teal-500/20 text-teal-300 border border-teal-500/30' : 'text-slate-400 hover:text-slate-200 border border-transparent'
+                }`}
+                title="Use Groq Llama 3.3 - Free High-Speed Key"
+              >
+                Groq
               </button>
               <button
                 type="button"
