@@ -175,6 +175,11 @@ function App() {
     try {
       const output = await fetchSection('unified', buildUnifiedVenturePrompt(ideaText, selectedSections), systemPrompt, 7500)
 
+      if (output.includes("Connection Error")) {
+        const errorDetails = output.replace("### Connection Error\nCould not compile the **unified** module. Details: ", "").trim()
+        throw new Error(errorDetails)
+      }
+
       // A. Parse metrics & scores JSON
       let parsedScores = { ideaScore: 78, painScore: 8, timingScore: 8 }
       let parsedBmc = null

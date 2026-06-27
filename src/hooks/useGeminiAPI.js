@@ -34,6 +34,8 @@ export async function callGemini(prompt, systemInstruction, maxTokens = 1500, hi
   }
 
   for (let attempt = 1; attempt <= retries; attempt++) {
+    const currentDelay = attempt === 1 ? 5000 : 16000;
+    
     try {
       const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
         method: 'POST',
@@ -55,8 +57,8 @@ export async function callGemini(prompt, systemInstruction, maxTokens = 1500, hi
       // If Rate Limit hit (HTTP 429), trigger backoff retry
       if (res.status === 429) {
         if (attempt < retries) {
-          console.warn(`Gemini 429 Rate Limit. Retrying in ${delayMs}ms (Attempt ${attempt}/${retries})...`);
-          await new Promise(resolve => setTimeout(resolve, delayMs));
+          console.warn(`Gemini 429 Rate Limit. Retrying in ${currentDelay}ms (Attempt ${attempt}/${retries})...`);
+          await new Promise(resolve => setTimeout(resolve, currentDelay));
           continue;
         }
       }
@@ -69,8 +71,8 @@ export async function callGemini(prompt, systemInstruction, maxTokens = 1500, hi
         const errLower = errorMessage.toLowerCase();
         if (errLower.includes("quota") || errLower.includes("rate limit") || errLower.includes("limit") || errLower.includes("429")) {
           if (attempt < retries) {
-            console.warn(`Gemini Quota Error: "${errorMessage}". Retrying in ${delayMs}ms (Attempt ${attempt}/${retries})...`);
-            await new Promise(resolve => setTimeout(resolve, delayMs));
+            console.warn(`Gemini Quota Error: "${errorMessage}". Retrying in ${currentDelay}ms (Attempt ${attempt}/${retries})...`);
+            await new Promise(resolve => setTimeout(resolve, currentDelay));
             continue;
           }
         }
@@ -87,8 +89,8 @@ export async function callGemini(prompt, systemInstruction, maxTokens = 1500, hi
       if (attempt === retries) {
         throw err;
       }
-      console.warn(`Attempt ${attempt} failed: ${err.message}. Retrying in ${delayMs}ms...`);
-      await new Promise(resolve => setTimeout(resolve, delayMs));
+      console.warn(`Attempt ${attempt} failed: ${err.message}. Retrying in ${currentDelay}ms...`);
+      await new Promise(resolve => setTimeout(resolve, currentDelay));
     }
   }
 }
