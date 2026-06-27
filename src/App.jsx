@@ -1,0 +1,421 @@
+import { useState } from 'react'
+import { Rocket, Sparkles, AlertCircle, RefreshCw, ChevronLeft, LayoutGrid, Presentation, MessageSquare, Download } from 'lucide-react'
+import IdeaInput from './components/IdeaInput'
+import LoadingScreen from './components/LoadingScreen'
+import ScoreCards from './components/ScoreCards'
+import ReportSection from './components/ReportSection'
+import NamesAndTaglines from './components/NamesAndTaglines'
+import SectionNav from './components/SectionNav'
+import ModelCanvas from './components/ModelCanvas'
+import MentorChat from './components/MentorChat'
+import { callClaude } from './hooks/useClaudeAPI'
+import { systemPrompt, sectionPrompts, scorePrompt, namesPrompt, taglinesPrompt, bmcPrompt, pitchDeckPrompt } from './prompts/sectionPrompts'
+
+// Icons mapping for report sections
+import { Users, TrendingUp, DollarSign, Code, AlertTriangle, ShieldCheck } from 'lucide-react'
+
+const SECTION_DETAILS = {
+  idea: { title: 'Idea Intelligence', icon: Sparkles, colorClass: 'text-indigo-400 border-indigo-500/20 bg-indigo-500/5' },
+  customer: { title: 'Customer Intelligence', icon: Users, colorClass: 'text-sky-400 border-sky-500/20 bg-sky-500/5' },
+  market: { title: 'Market & Competition', icon: TrendingUp, colorClass: 'text-emerald-400 border-emerald-500/20 bg-emerald-500/5' },
+  business: { title: 'Business Model', icon: DollarSign, colorClass: 'text-amber-400 border-amber-500/20 bg-amber-500/5' },
+  build: { title: 'Building the Startup', icon: Code, colorClass: 'text-purple-400 border-purple-500/20 bg-purple-500/5' },
+  risk: { title: 'Risk & Validation', icon: AlertTriangle, colorClass: 'text-rose-400 border-rose-500/20 bg-rose-500/5' },
+  validation: { title: 'Validation Engine', icon: ShieldCheck, colorClass: 'text-teal-400 border-teal-500/20 bg-teal-500/5' },
+  traction: { title: 'Traction Dashboard', icon: Sparkles, colorClass: 'text-pink-400 border-pink-500/20 bg-pink-500/5' }
+}
+
+function App() {
+  // Load state from localStorage on init
+  const [stage, setStage] = useState(() => localStorage.getItem('sg_stage') || 'input')
+  const [idea, setIdea] = useState(() => localStorage.getItem('sg_idea') || '')
+  const [activeSections, setActiveSections] = useState(() => {
+    const saved = localStorage.getItem('sg_active_sections')
+    return saved ? JSON.parse(saved) : []
+  })
+  const [results, setResults] = useState(() => {
+    const saved = localStorage.getItem('sg_results')
+    return saved ? JSON.parse(saved) : {}
+  })
+  const [scores, setScores] = useState(() => {
+    const saved = localStorage.getItem('sg_scores')
+    return saved ? JSON.parse(saved) : { ideaScore: 70, painScore: 7, timingScore: 7 }
+  })
+  const [names, setNames] = useState(() => localStorage.getItem('sg_names') || '')
+  const [taglines, setTaglines] = useState(() => localStorage.getItem('sg_taglines') || '')
+  const [bmc, setBmc] = useState(() => {
+    const saved = localStorage.getItem('sg_bmc')
+    return saved ? JSON.parse(saved) : null
+  })
+  const [pitchDeck, setPitchDeck] = useState(() => localStorage.getItem('sg_pitch_deck') || '')
+  const [chatHistory, setChatHistory] = useState(() => {
+    const saved = localStorage.getItem('sg_chat_history')
+    return saved ? JSON.parse(saved) : []
+  })
+  
+  const [error, setError] = useState('')
+
+  const fetchSection = async (key, prompt, system, maxTokens) => {
+    try {
+      return await callClaude(prompt, system, maxTokens)
+    } catch (err) {
+      console.error(`Error loading ${key} section:`, err)
+      return `### Connection Error\nCould not compile the **${key}** module. Details: ${err.message}.`
+    }
+  }
+
+  const handleGenerate = async (ideaText, selectedSections) => {
+    setIdea(ideaText)
+    setActiveSections(selectedSections)
+    setStage('loading')
+    setError('')
+
+    const promises = []
+    const keys = []
+
+    // 1. Selected modules
+    selectedSections.forEach((secId) => {
+      promises.push(fetchSection(secId, sectionPrompts[secId](ideaText), systemPrompt, 1600))
+      keys.push(secId)
+    })
+
+    // 2. Auxiliary dashboard data
+    promises.push(fetchSection('scores', scorePrompt(ideaText), 'Return only valid JSON.', 200))
+    keys.push('scores')
+
+    promises.push(fetchSection('names', namesPrompt(ideaText), systemPrompt, 600))
+    keys.push('names')
+
+    promises.push(fetchSection('taglines', taglinesPrompt(ideaText), systemPrompt, 500))
+    keys.push('taglines')
+
+    promises.push(fetchSection('bmc', bmcPrompt(ideaText), 'Return only valid JSON.', 1000))
+    keys.push('bmc')
+
+    promises.push(fetchSection('pitchDeck', pitchDeckPrompt(ideaText), systemPrompt, 1000))
+    keys.push('pitchDeck')
+
+    try {
+      const resultsArray = await Promise.all(promises)
+
+      const textReports = {}
+      let parsedScores = { ideaScore: 75, painScore: 8, timingScore: 8 }
+      let parsedBmc = null
+      let retrievedNames = ''
+      let retrievedTaglines = ''
+      let retrievedPitchDeck = ''
+
+      resultsArray.forEach((value, index) => {
+        const key = keys[index]
+
+        if (key === 'scores') {
+          try {
+            const cleanJson = value.replace(/```json/g, '').replace(/```/g, '').trim()
+            parsedScores = JSON.parse(cleanJson)
+          } catch (e) {
+            console.error("Failed to parse scores JSON", e)
+          }
+        } else if (key === 'bmc') {
+          try {
+            const cleanJson = value.replace(/```json/g, '').replace(/```/g, '').trim()
+            parsedBmc = JSON.parse(cleanJson)
+          } catch (e) {
+            console.error("Failed to parse BMC JSON", e)
+          }
+        } else if (key === 'names') {
+          retrievedNames = value
+        } else if (key === 'taglines') {
+          retrievedTaglines = value
+        } else if (key === 'pitchDeck') {
+          retrievedPitchDeck = value
+        } else {
+          textReports[key] = value
+        }
+      })
+
+      // Setup initial chat message
+      const initialChat = [
+        {
+          role: 'assistant',
+          content: `Hello! I'm your Startup Co-Founder. I've analyzed your concept: **"${ideaText}"**.\n\nAsk me anything! We can brainstorm a B2B pivot, write investor cold emails, plan customer acquisition, or simulate "What If" scenarios. What's on your mind?`
+        }
+      ]
+
+      // Set states
+      setResults(textReports)
+      setScores(parsedScores)
+      setBmc(parsedBmc)
+      setNames(retrievedNames)
+      setTaglines(retrievedTaglines)
+      setPitchDeck(retrievedPitchDeck)
+      setChatHistory(initialChat)
+      setStage('results')
+
+      // Save to localStorage
+      localStorage.setItem('sg_stage', 'results')
+      localStorage.setItem('sg_idea', ideaText)
+      localStorage.setItem('sg_active_sections', JSON.stringify(selectedSections))
+      localStorage.setItem('sg_results', JSON.stringify(textReports))
+      localStorage.setItem('sg_scores', JSON.stringify(parsedScores))
+      localStorage.setItem('sg_names', retrievedNames)
+      localStorage.setItem('sg_taglines', retrievedTaglines)
+      if (parsedBmc) localStorage.setItem('sg_bmc', JSON.stringify(parsedBmc))
+      localStorage.setItem('sg_pitch_deck', retrievedPitchDeck)
+      localStorage.setItem('sg_chat_history', JSON.stringify(initialChat))
+    } catch (err) {
+      console.error(err)
+      setError(err.message || 'Fatal generation error. Please check your API key.')
+      setStage('input')
+    }
+  }
+
+  const handleReset = () => {
+    setStage('input')
+    setIdea('')
+    setResults({})
+    setBmc(null)
+    setNames('')
+    setTaglines('')
+    setPitchDeck('')
+    setChatHistory([])
+    setError('')
+
+    // Clear localStorage
+    localStorage.removeItem('sg_stage')
+    localStorage.removeItem('sg_idea')
+    localStorage.removeItem('sg_active_sections')
+    localStorage.removeItem('sg_results')
+    localStorage.removeItem('sg_scores')
+    localStorage.removeItem('sg_names')
+    localStorage.removeItem('sg_taglines')
+    localStorage.removeItem('sg_bmc')
+    localStorage.removeItem('sg_pitch_deck')
+    localStorage.removeItem('sg_chat_history')
+  }
+
+  // Generate markdown and trigger direct local download
+  const handleDownload = () => {
+    let md = `# StartupGPT 2.0 - Venture Validation Report\n\n`;
+    md += `### Original Concept\n> "${idea}"\n\n`;
+    md += `### Metrics Dashboard\n`;
+    md += `- **Venture Score**: ${scores.ideaScore}/100\n`;
+    md += `- **Customer Pain Score**: ${scores.painScore}/10\n`;
+    md += `- **Market Timing Score**: ${scores.timingScore}/10\n\n`;
+    
+    if (names) {
+      md += `## Suggested Startup Names\n${names}\n\n`;
+    }
+    if (taglines) {
+      md += `## High-Impact Taglines\n${taglines}\n\n`;
+    }
+    if (bmc) {
+      md += `## HBS Business Model Canvas\n\n`;
+      md += `| Key Partners | Key Activities | Value Propositions | Customer Relationships | Customer Segments |\n`;
+      md += `| --- | --- | --- | --- | --- |\n`;
+      md += `| ${bmc.keyPartners.replace(/\n/g, '<br>')} | ${bmc.keyActivities.replace(/\n/g, '<br>')} | ${bmc.valuePropositions.replace(/\n/g, '<br>')} | ${bmc.customerRelationships.replace(/\n/g, '<br>')} | ${bmc.customerSegments.replace(/\n/g, '<br>')} |\n\n`;
+      md += `| Cost Structure | Channels & Revenue |\n`;
+      md += `| --- | --- |\n`;
+      md += `| ${bmc.costStructure.replace(/\n/g, '<br>')} | ${bmc.channels.replace(/\n/g, '<br>')}<br><br>${bmc.revenueStreams.replace(/\n/g, '<br>')} |\n\n`;
+    }
+    
+    Object.entries(results).forEach(([key, value]) => {
+      md += `## ${SECTION_DETAILS[key]?.title || key.toUpperCase()}\n${value}\n\n`;
+    });
+    
+    if (pitchDeck) {
+      md += `## Investor Pitch Deck Outline\n${pitchDeck}\n\n`;
+    }
+    
+    md += `\n---\n*Report compiled via StartupGPT 2.0 on ${new Date().toLocaleDateString()}*`;
+    
+    const blob = new Blob([md], { type: 'text/markdown;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `startupgpt-blueprint-${Date.now()}.md`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
+  const getReportSummaryText = () => {
+    let summary = ''
+    Object.entries(results).forEach(([key, val]) => {
+      summary += `${key.toUpperCase()}:\n${val.slice(0, 800)}\n\n`
+    })
+    if (names) summary += `NAME SUGGESTIONS:\n${names.slice(0, 400)}\n\n`
+    if (taglines) summary += `TAGLINE SUGGESTIONS:\n${taglines.slice(0, 400)}\n\n`
+    return summary
+  }
+
+  return (
+    <div className="min-h-screen bg-brand-950 text-slate-100 flex flex-col justify-between selection:bg-indigo-500 selection:text-white relative">
+      <div className="absolute top-0 left-1/4 w-96 h-96 bg-indigo-600/5 rounded-full blur-3xl pointer-events-none"></div>
+      <div className="absolute bottom-10 right-1/4 w-96 h-96 bg-purple-600/5 rounded-full blur-3xl pointer-events-none"></div>
+
+      {/* Header */}
+      <header className="border-b border-white/5 bg-brand-950/60 backdrop-blur-md sticky top-0 z-50">
+        <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-2 cursor-pointer select-none" onClick={handleReset}>
+            <div className="bg-gradient-to-tr from-indigo-500 to-purple-600 p-2 rounded-xl text-white shadow-md shadow-indigo-500/10">
+              <Rocket className="w-5 h-5 animate-pulse" />
+            </div>
+            <div>
+              <h1 className="text-lg font-bold tracking-tight font-sans">
+                StartupGPT <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">2.0</span>
+              </h1>
+              <p className="text-[9px] text-slate-400 font-medium">Your AI Co-Founder Platform</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {stage === 'results' && (
+              <button
+                onClick={handleReset}
+                className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white transition-colors px-3 py-1.5 rounded-xl border border-white/5 bg-white/5"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+                New Idea
+              </button>
+            )}
+            <span className="text-xs text-slate-400 font-medium flex items-center gap-1.5 bg-brand-900/40 border border-white/5 px-2.5 py-1 rounded-xl">
+              <span className={`w-1.5 h-1.5 rounded-full ${stage === 'loading' ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'}`}></span>
+              {stage === 'loading' ? 'Processing' : 'System Ready'}
+            </span>
+          </div>
+        </div>
+      </header>
+
+      {/* Sticky pill section nav */}
+      {stage === 'results' && (
+        <SectionNav activeSections={activeSections} onReset={handleReset} />
+      )}
+
+      {/* Main Section */}
+      <main className="max-w-5xl mx-auto px-4 py-10 flex-grow flex flex-col items-center justify-center w-full relative z-10">
+        {error && (
+          <div className="mb-6 w-full max-w-2xl bg-rose-500/10 border border-rose-500/25 text-rose-300 rounded-xl p-4 flex items-start gap-3 animate-fade-in">
+            <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <h4 className="text-sm font-semibold">Execution interrupted</h4>
+              <p className="text-xs text-slate-400">{error}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Setup Stage */}
+        {stage === 'input' && (
+          <div className="w-full flex flex-col items-center space-y-8">
+            <div className="text-center max-w-2xl space-y-3">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-xs text-indigo-300 font-medium">
+                <LayoutGrid className="w-3.5 h-3.5" />
+                Step 9: PDF & Document Export
+              </div>
+              <h2 className="text-3xl md:text-5xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-b from-white to-slate-300 font-sans leading-tight">
+                Launch Your Idea With Premium AI Mentorship
+              </h2>
+              <p className="text-slate-400 text-sm md:text-base max-w-xl mx-auto leading-relaxed">
+                Describe your startup vision. We will run parallel engines to construct brand name candidates, score viability metrics, and format full-scale marketing playbooks.
+              </p>
+            </div>
+
+            <IdeaInput onGenerate={handleGenerate} />
+          </div>
+        )}
+
+        {/* Loading Screen */}
+        {stage === 'loading' && <LoadingScreen />}
+
+        {/* Complete Results Display */}
+        {stage === 'results' && (
+          <div className="w-full max-w-4xl space-y-10 animate-fade-in">
+            
+            {/* 1. Score dashboard cards */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between px-1 flex-wrap gap-2">
+                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">
+                  Venture Metric Indicators
+                </h3>
+                <button
+                  onClick={handleDownload}
+                  className="flex items-center gap-1.5 text-xs font-semibold text-indigo-400 hover:text-indigo-300 transition-colors bg-indigo-500/10 border border-indigo-500/20 px-3.5 py-1.5 rounded-xl hover:bg-indigo-500/20 active:scale-[0.98]"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Download Blueprint (.md)
+                </button>
+              </div>
+              <ScoreCards scores={scores} />
+            </div>
+
+            {/* 2. Names & Taglines generator row */}
+            {(names || taglines) && (
+              <NamesAndTaglines namesText={names} taglinesText={taglines} />
+            )}
+
+            {/* 3. Business Model Canvas Grid */}
+            {bmc && (
+              <ModelCanvas bmcData={bmc} />
+            )}
+
+            {/* 4. Render analytical reports */}
+            <div className="space-y-6">
+              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest px-1">
+                Venture Intelligence Reports
+              </h3>
+              {activeSections.map((secId) => {
+                const details = SECTION_DETAILS[secId]
+                const content = results[secId]
+                if (!details || !content) return null
+
+                return (
+                  <ReportSection
+                    key={secId}
+                    id={secId}
+                    title={details.title}
+                    icon={details.icon}
+                    content={content}
+                    colorClass={details.colorClass}
+                  />
+                )
+              })}
+
+              {/* Pitch deck outline card */}
+              {pitchDeck && (
+                <ReportSection
+                  id="pitchdeck"
+                  title="10-Slide Investor Pitch Deck Outline"
+                  icon={Presentation}
+                  content={pitchDeck}
+                  colorClass="text-purple-400 border-purple-500/20 bg-purple-500/5"
+                />
+              )}
+            </div>
+
+            {/* 5. AI Mentor Chat Room */}
+            {chatHistory && (
+              <div className="space-y-3 pt-6 border-t border-white/5 scroll-mt-24" id="section-chat">
+                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5 px-1">
+                  <MessageSquare className="w-4 h-4 text-indigo-400" />
+                  Venture Mentorship Chat
+                </h3>
+                <MentorChat
+                  idea={idea}
+                  reportSummary={getReportSummaryText()}
+                  messages={chatHistory}
+                  setMessages={setChatHistory}
+                />
+              </div>
+            )}
+          </div>
+        )}
+      </main>
+
+      {/* Footer */}
+      <footer className="border-t border-white/5 py-6 text-center text-xs text-slate-500 mt-12">
+        <p>© {new Date().getFullYear()} StartupGPT. Powered by Claude 3.5 Sonnet.</p>
+      </footer>
+    </div>
+  )
+}
+
+export default App
