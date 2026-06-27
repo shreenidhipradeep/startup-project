@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Rocket, Sparkles, AlertCircle, RefreshCw, ChevronLeft, LayoutGrid, Presentation, MessageSquare, Download } from 'lucide-react'
+import { Rocket, Sparkles, AlertCircle, RefreshCw, ChevronLeft, LayoutGrid, Presentation, MessageSquare, Download, Play, ToggleLeft, ToggleRight } from 'lucide-react'
 import IdeaInput from './components/IdeaInput'
 import LoadingScreen from './components/LoadingScreen'
 import ScoreCards from './components/ScoreCards'
@@ -10,6 +10,7 @@ import ModelCanvas from './components/ModelCanvas'
 import MentorChat from './components/MentorChat'
 import { callClaude } from './hooks/useClaudeAPI'
 import { systemPrompt, sectionPrompts, scorePrompt, namesPrompt, taglinesPrompt, bmcPrompt, pitchDeckPrompt } from './prompts/sectionPrompts'
+import { mockFoodtech, mockFintech, mockEdtech, mockGeneric } from './prompts/mockData'
 
 // Icons mapping for report sections
 import { Users, TrendingUp, DollarSign, Code, AlertTriangle, ShieldCheck } from 'lucide-react'
@@ -29,6 +30,13 @@ function App() {
   // Load state from localStorage on init
   const [stage, setStage] = useState(() => localStorage.getItem('sg_stage') || 'input')
   const [idea, setIdea] = useState(() => localStorage.getItem('sg_idea') || '')
+  
+  // Default to Demo Mode = true so it works out of the box for free!
+  const [demoMode, setDemoMode] = useState(() => {
+    const saved = localStorage.getItem('sg_demo_mode')
+    return saved ? saved === 'true' : true
+  })
+
   const [activeSections, setActiveSections] = useState(() => {
     const saved = localStorage.getItem('sg_active_sections')
     return saved ? JSON.parse(saved) : []
@@ -55,6 +63,12 @@ function App() {
   
   const [error, setError] = useState('')
 
+  const toggleDemoMode = () => {
+    const newVal = !demoMode
+    setDemoMode(newVal)
+    localStorage.setItem('sg_demo_mode', newVal.toString())
+  }
+
   const fetchSection = async (key, prompt, system, maxTokens) => {
     try {
       return await callClaude(prompt, system, maxTokens)
@@ -70,6 +84,85 @@ function App() {
     setStage('loading')
     setError('')
 
+    // --- DEMO MODE RUNTIME ---
+    if (demoMode) {
+      const text = ideaText.toLowerCase()
+      let selectedMock = mockGeneric
+
+      if (
+        text.includes('food') || 
+        text.includes('cook') || 
+        text.includes('meal') || 
+        text.includes('lunch') || 
+        text.includes('eat') || 
+        text.includes('kitchen') || 
+        text.includes('office') || 
+        text.includes('catering')
+      ) {
+        selectedMock = mockFoodtech
+      } else if (
+        text.includes('gold') || 
+        text.includes('save') || 
+        text.includes('upi') || 
+        text.includes('penny') || 
+        text.includes('coin') || 
+        text.includes('finance') || 
+        text.includes('student') || 
+        text.includes('money')
+      ) {
+        selectedMock = mockFintech
+      } else if (
+        text.includes('code') || 
+        text.includes('school') || 
+        text.includes('vernacular') || 
+        text.includes('kid') || 
+        text.includes('teach') || 
+        text.includes('language') || 
+        text.includes('coding')
+      ) {
+        selectedMock = mockEdtech
+      }
+
+      // Simulate network latency for realism
+      setTimeout(() => {
+        const textReports = {}
+        selectedSections.forEach((secId) => {
+          textReports[secId] = selectedMock.results[secId] || "Mock analysis section details loaded successfully."
+        })
+
+        const initialChat = [
+          {
+            role: 'assistant',
+            content: `Hello! I'm your Startup Co-Founder (Demo Mode). I've analyzed your concept: **"${ideaText}"**.\n\nAsk me anything! We can brainstorm a B2B pivot, write investor cold emails, plan customer acquisition, or simulate "What If" scenarios. What's on your mind?`
+          }
+        ]
+
+        setResults(textReports)
+        setScores(selectedMock.scores)
+        setBmc(selectedMock.bmc)
+        setNames(selectedMock.names)
+        setTaglines(selectedMock.taglines)
+        setPitchDeck(selectedMock.pitchDeck)
+        setChatHistory(initialChat)
+        setStage('results')
+
+        // Save to localStorage
+        localStorage.setItem('sg_stage', 'results')
+        localStorage.setItem('sg_idea', ideaText)
+        localStorage.setItem('sg_active_sections', JSON.stringify(selectedSections))
+        localStorage.setItem('sg_results', JSON.stringify(textReports))
+        localStorage.setItem('sg_scores', JSON.stringify(selectedMock.scores))
+        localStorage.setItem('sg_names', selectedMock.names)
+        localStorage.setItem('sg_taglines', selectedMock.taglines)
+        if (selectedMock.bmc) localStorage.setItem('sg_bmc', JSON.stringify(selectedMock.bmc))
+        localStorage.setItem('sg_pitch_deck', selectedMock.pitchDeck)
+        localStorage.setItem('sg_chat_history', JSON.stringify(initialChat))
+      }, 2500)
+
+      return
+    }
+
+    // --- STANDARD API RUNTIME ---
     const promises = []
     const keys = []
 
@@ -133,7 +226,6 @@ function App() {
         }
       })
 
-      // Setup initial chat message
       const initialChat = [
         {
           role: 'assistant',
@@ -141,7 +233,6 @@ function App() {
         }
       ]
 
-      // Set states
       setResults(textReports)
       setScores(parsedScores)
       setBmc(parsedBmc)
@@ -268,7 +359,20 @@ function App() {
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          {/* Toggle Switches */}
+          <div className="flex items-center gap-4">
+            <button
+              onClick={toggleDemoMode}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold select-none transition-all ${
+                demoMode
+                  ? 'bg-amber-500/15 border-amber-500/35 text-amber-300 shadow-md shadow-amber-500/5'
+                  : 'bg-indigo-500/10 border-indigo-500/25 text-indigo-300'
+              }`}
+            >
+              {demoMode ? <ToggleRight className="w-4 h-4 text-amber-400" /> : <ToggleLeft className="w-4 h-4 text-indigo-400" />}
+              {demoMode ? 'Demo Mode Active (Free)' : 'Live API Key Mode'}
+            </button>
+
             {stage === 'results' && (
               <button
                 onClick={handleReset}
@@ -278,7 +382,7 @@ function App() {
                 New Idea
               </button>
             )}
-            <span className="text-xs text-slate-400 font-medium flex items-center gap-1.5 bg-brand-900/40 border border-white/5 px-2.5 py-1 rounded-xl">
+            <span className="text-xs text-slate-400 font-medium hidden sm:flex items-center gap-1.5 bg-brand-900/40 border border-white/5 px-2.5 py-1 rounded-xl">
               <span className={`w-1.5 h-1.5 rounded-full ${stage === 'loading' ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'}`}></span>
               {stage === 'loading' ? 'Processing' : 'System Ready'}
             </span>
@@ -308,8 +412,8 @@ function App() {
           <div className="w-full flex flex-col items-center space-y-8">
             <div className="text-center max-w-2xl space-y-3">
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-xs text-indigo-300 font-medium">
-                <LayoutGrid className="w-3.5 h-3.5" />
-                Step 9: PDF & Document Export
+                <Play className="w-3 h-3 text-indigo-400" />
+                Free Demo Mode Integration
               </div>
               <h2 className="text-3xl md:text-5xl font-extrabold tracking-tight text-transparent bg-clip-text bg-gradient-to-b from-white to-slate-300 font-sans leading-tight">
                 Launch Your Idea With Premium AI Mentorship
@@ -403,6 +507,7 @@ function App() {
                   reportSummary={getReportSummaryText()}
                   messages={chatHistory}
                   setMessages={setChatHistory}
+                  demoMode={demoMode}
                 />
               </div>
             )}

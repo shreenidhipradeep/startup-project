@@ -8,7 +8,7 @@ const QUICK_CHIPS = [
   { label: 'Revenue Critique', text: 'Brutally critique my monetization strategy. List the top 2 leaks and suggest how to optimize my unit economics.' }
 ]
 
-export default function MentorChat({ idea, reportSummary, messages, setMessages }) {
+export default function MentorChat({ idea, reportSummary, messages, setMessages, demoMode }) {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const chatEndRef = useRef(null)
@@ -28,19 +28,45 @@ export default function MentorChat({ idea, reportSummary, messages, setMessages 
     localStorage.setItem('sg_chat_history', JSON.stringify(updatedMessages))
     setLoading(true)
 
+    // Demo Mode Handler
+    if (demoMode) {
+      setTimeout(() => {
+        const query = text.toLowerCase()
+        let reply = ""
+
+        if (query.includes('pivot') || query.includes('b2b')) {
+          reply = `Here is a **B2B Pivot Strategy** customized for this concept:\n\n1. **Target Corporate Partnerships**: Instead of selling to individual consumers, pitch this to corporate HR teams as a wellness benefit.\n2. **Direct Billing**: Charge companies on a flat monthly retainer (subscription fees) rather than micro-fees to improve cash flow predictability.\n3. **Admin Dashboard**: Provide HR with analytics dashboards showing team engagement rates.\n\nThis shift can **raise your LTV by 4.5x** and reduce customer churn to near-zero.`
+        } else if (query.includes('investor') || query.includes('email') || query.includes('cold')) {
+          reply = `Here is an **Investor Cold Email Template** ready to customize:\n\n**Subject**: Round-up gold wealth platform for young India - Gullak\n\nDear [Investor Name],\n\nI am the founder of Gullak, a micro-investment platform that rounds up UPI payments to buy digital gold. We are targeting India's 75M college students.\n\nIn our first 4 weeks, we've hit 2,000 signups with a ₹450 customer acquisition cost. We are raising a $50k pre-seed round to scale auto-debit NPCI mandate integrations.\n\nI would love to share our short slide deck. Do you have 5 minutes for a call this Thursday at 3 PM?\n\nBest regards,\n[Your Name]`
+        } else if (query.includes('task') || query.includes('week') || query.includes('todo')) {
+          reply = `Here are your **3 Immediate Tasks** to execute this week:\n\n1. **Conduct 5 Customer Interviews**: Use our generated Google Form survey questions to speak with target users in person.\n2. **Launch a Waitlist Landing Page**: Publish our generated copywriting using Carrd or Softr to collect the first 100 emails.\n3. **Onboard 2 Beta Partners**: Reach out to small local vendors or creators and get agreements for a pilot testing launch.`
+        } else if (query.includes('revenue') || query.includes('critique') || query.includes('leak') || query.includes('economics')) {
+          reply = `Here is a **Monetization & Unit Economics Critique**:\n\n1. **Payment Gateway Leaks**: Micro-transactions under ₹20 are heavily diluted by flat processing gateway fees. Mitigate by batching deductions once users reach a threshold of ₹50.\n2. **Freemium Churn**: Having unlimited free features hurts server costs. Restrict advanced timelines and download sheets to premium tier accounts to drive conversions.`
+        } else {
+          reply = `That is an excellent point! As your co-founder, my advice is to focus 100% of our energy this week on getting our first 10 organic signups to prove active demand. Building dashboards before getting users is a common failure trap. Let's design our launch waitlist first!`
+        }
+
+        const finalMessages = [...updatedMessages, { role: 'assistant', content: reply }]
+        setMessages(finalMessages)
+        localStorage.setItem('sg_chat_history', JSON.stringify(finalMessages))
+        setLoading(false)
+      }, 1500) // 1.5s thinking delay for realism
+
+      return
+    }
+
+    // Normal API Mode Handler
     try {
       const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY
       if (!apiKey || apiKey === 'your_key_here') {
         throw new Error("Missing Anthropic API Key. Please configure your key in the local .env file.")
       }
 
-      // Format messages into Claude specification
       const apiMessages = updatedMessages.map((msg) => ({
         role: msg.role,
         content: msg.content
       }))
 
-      // Call Anthropic API
       const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
@@ -56,7 +82,7 @@ export default function MentorChat({ idea, reportSummary, messages, setMessages 
           Idea: "${idea}"
           Summary of generated business intelligence: ${reportSummary ? reportSummary.slice(0, 3000) : 'Generating details...'}
           Be honest, encouraging, and write in short, punchy paragraphs with bold items.`,
-          messages: apiMessages.slice(-8) // Send only the last 8 messages to conserve tokens
+          messages: apiMessages.slice(-8)
         })
       })
 
@@ -105,7 +131,7 @@ export default function MentorChat({ idea, reportSummary, messages, setMessages 
           </div>
           <div>
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200">
-              Co-Founder Mentorship Room
+              Co-Founder Mentorship Room {demoMode && <span className="text-[9px] text-amber-400 font-bold ml-1">(DEMO)</span>}
             </h3>
             <p className="text-[9px] text-slate-400 font-medium">Equipped with full project context</p>
           </div>
